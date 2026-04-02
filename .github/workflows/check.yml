@@ -14,13 +14,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Start service
-        run: docker compose up --build -d
-
-      - name: Wait for service to be healthy
-        run: docker compose wait presidio
+      - name: Start service and wait for healthy
+        run: docker compose up --build --wait
 
       - name: E2E Test
         run: make e2e-test
