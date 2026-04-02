@@ -228,6 +228,18 @@ wheels = [
 ]
 
 [[package]]
+name = "de-core-news-lg"
+version = "3.8.0"
+source = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0.tar.gz" }
+sdist = { hash = "sha256:e43749a03cc489fd224392d2ac420c4ddffb8bc9389764f7c4904057fb7596ac" }
+
+[[package]]
+name = "en-core-web-lg"
+version = "3.8.0"
+source = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0.tar.gz" }
+sdist = { hash = "sha256:7a3c89f3243950000a102c5f124277bbbde2dec467d548eee28b23bd1938ed62" }
+
+[[package]]
 name = "filelock"
 version = "3.25.2"
 source = { registry = "https://pypi.org/simple" }
@@ -479,12 +491,16 @@ name = "presidio"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "de-core-news-lg" },
+    { name = "en-core-web-lg" },
     { name = "presidio-analyzer", extra = ["server"] },
     { name = "presidio-anonymizer", extra = ["server"] },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "de-core-news-lg", url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0.tar.gz" },
+    { name = "en-core-web-lg", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0.tar.gz" },
     { name = "presidio-analyzer", extras = ["server"], specifier = "==2.2.362" },
     { name = "presidio-anonymizer", extras = ["server"], specifier = "==2.2.362" },
 ]
