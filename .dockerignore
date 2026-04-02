@@ -1,0 +1,16 @@
+.venv/
+.git/
+.github/
+.gitignore
+.idea/
+.claude/
+.omc/
+__pycache__/
+*.pyc
+tests/
+*.md
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+Makefile
