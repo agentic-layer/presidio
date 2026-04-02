@@ -9,4 +9,4 @@ docker-build:
 
 .PHONY: e2e-test
 e2e-test:
-	./tests/e2e_test.sh $(IMG)
+	./tests/e2e_test.sh

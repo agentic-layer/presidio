@@ -16,8 +16,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Docker Build
-        run: make docker-build
+      - name: Start service
+        run: docker compose up --build -d
+
+      - name: Wait for service to be healthy
+        run: docker compose wait presidio
 
       - name: E2E Test
         run: make e2e-test
+
+      - name: Stop service
+        if: always()
+        run: docker compose down

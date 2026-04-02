@@ -1,6 +1,5 @@
 services:
   presidio:
     build: .
-    image: ${IMG:-ghcr.io/agentic-layer/presidio:test}
     ports:
       - "3000:3000"

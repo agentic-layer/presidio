@@ -1,5 +1,6 @@
 FROM python:3.13-slim
 
+ENV UV_PYTHON_DOWNLOADS=never
 ENV WORKERS=1
 ENV PORT=3000
 ENV NLP_CONF_FILE=/app/conf/nlp.yaml
