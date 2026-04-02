@@ -9,9 +9,8 @@ import logging
 import os
 from logging.config import fileConfig
 from pathlib import Path
-from typing import Tuple
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, request
 from presidio_analyzer import (
     AnalyzerEngine,
     AnalyzerEngineProvider,
@@ -28,6 +27,8 @@ DEFAULT_BATCH_SIZE = "500"
 DEFAULT_N_PROCESS = "1"
 
 LOGGING_CONF_FILE = "logging.ini"
+
+CONTENT_TYPE_JSON = "application/json"
 
 
 class Server:
@@ -65,111 +66,140 @@ class Server:
         self._register_routes()
 
     def _register_routes(self):
-        app = self.app
+        self._register_health_routes()
+        self._register_analyzer_routes()
+        self._register_anonymizer_routes()
+        self._register_error_handlers()
 
-        @app.route("/health")
+    def _register_health_routes(self):
+        @self.app.route("/health")
         def health() -> str:
             """Return basic health probe result."""
             return "Presidio service is up"
 
-        # --- Analyzer routes ---
+    def _validate_analyze_request(self, req_data: AnalyzerRequest):
+        if not req_data.text:
+            raise ValueError("No text provided")
+        if not req_data.language:
+            raise ValueError("No language provided")
+        self.engine.get_supported_entities(req_data.language)
 
-        @app.route("/analyze", methods=["POST"])
-        def analyze() -> Tuple[str, int]:
+    def _run_analysis(self, req_data: AnalyzerRequest) -> Response:
+        batch_request = isinstance(req_data.text, list)
+        batch = req_data.text if batch_request else [req_data.text]
+
+        iterator = self.batch_engine.analyze_iterator(
+            texts=batch,
+            batch_size=min(
+                len(batch),
+                int(os.environ.get("BATCH_SIZE", DEFAULT_BATCH_SIZE))
+            ),
+            language=req_data.language,
+            correlation_id=req_data.correlation_id,
+            score_threshold=req_data.score_threshold,
+            entities=req_data.entities,
+            return_decision_process=req_data.return_decision_process,
+            ad_hoc_recognizers=req_data.ad_hoc_recognizers,
+            context=req_data.context,
+            allow_list=req_data.allow_list,
+            allow_list_match=req_data.allow_list_match,
+            regex_flags=req_data.regex_flags,
+            n_process=min(
+                len(batch),
+                int(os.environ.get("N_PROCESS", DEFAULT_N_PROCESS))
+            )
+        )
+        results = []
+        for recognizer_result_list in iterator:
+            _exclude_attributes_from_dto(recognizer_result_list)
+            results.append(recognizer_result_list)
+
+        return Response(
+            json.dumps(
+                results if batch_request else results[0],
+                default=lambda o: o.to_dict(),
+                sort_keys=True,
+            ),
+            content_type=CONTENT_TYPE_JSON,
+        )
+
+    def _register_analyzer_routes(self):
+        @self.app.route("/analyze", methods=["POST"])
+        def analyze() -> Response:
             """Execute the analyzer function."""
             try:
                 req_data = AnalyzerRequest(request.get_json())
-                if not req_data.text:
-                    raise Exception("No text provided")
-
-                batch_request = isinstance(req_data.text, list)
-                batch = req_data.text if batch_request else [req_data.text]
-
-                if not req_data.language:
-                    raise Exception("No language provided")
-                else:
-                    self.engine.get_supported_entities(req_data.language)
-
-                iterator = self.batch_engine.analyze_iterator(
-                    texts=batch,
-                    batch_size=min(
-                        len(batch),
-                        int(os.environ.get("BATCH_SIZE", DEFAULT_BATCH_SIZE))
-                    ),
-                    language=req_data.language,
-                    correlation_id=req_data.correlation_id,
-                    score_threshold=req_data.score_threshold,
-                    entities=req_data.entities,
-                    return_decision_process=req_data.return_decision_process,
-                    ad_hoc_recognizers=req_data.ad_hoc_recognizers,
-                    context=req_data.context,
-                    allow_list=req_data.allow_list,
-                    allow_list_match=req_data.allow_list_match,
-                    regex_flags=req_data.regex_flags,
-                    n_process=min(
-                        len(batch),
-                        int(os.environ.get("N_PROCESS", DEFAULT_N_PROCESS))
-                    )
-                )
-                results = []
-                for recognizer_result_list in iterator:
-                    _exclude_attributes_from_dto(recognizer_result_list)
-                    results.append(recognizer_result_list)
-
-                return Response(
-                    json.dumps(
-                        results if batch_request else results[0],
-                        default=lambda o: o.to_dict(),
-                        sort_keys=True,
-                    ),
-                    content_type="application/json",
-                )
+                self._validate_analyze_request(req_data)
+                return self._run_analysis(req_data)
             except TypeError as te:
                 error_msg = (
                     f"Failed to parse /analyze request "
                     f"for AnalyzerEngine.analyze(). {te.args[0]}"
                 )
                 self.logger.error(error_msg)
-                return jsonify(error=error_msg), 400
+                return Response(
+                    json.dumps({"error": error_msg}),
+                    status=400,
+                    content_type=CONTENT_TYPE_JSON,
+                )
             except Exception as e:
                 self.logger.error(
                     f"A fatal error occurred during execution of "
                     f"AnalyzerEngine.analyze(). {e}"
                 )
-                return jsonify(error=e.args[0]), 500
+                return Response(
+                    json.dumps({"error": e.args[0]}),
+                    status=500,
+                    content_type=CONTENT_TYPE_JSON,
+                )
 
-        @app.route("/recognizers", methods=["GET"])
-        def recognizers() -> Tuple[str, int]:
+        @self.app.route("/recognizers", methods=["GET"])
+        def recognizers() -> Response:
             """Return a list of supported recognizers."""
             language = request.args.get("language")
             try:
                 recognizers_list = self.engine.get_recognizers(language)
                 names = [o.name for o in recognizers_list]
-                return jsonify(names), 200
+                return Response(
+                    json.dumps(names),
+                    status=200,
+                    content_type=CONTENT_TYPE_JSON,
+                )
             except Exception as e:
                 self.logger.error(
                     f"A fatal error occurred during execution of "
                     f"AnalyzerEngine.get_recognizers(). {e}"
                 )
-                return jsonify(error=e.args[0]), 500
+                return Response(
+                    json.dumps({"error": e.args[0]}),
+                    status=500,
+                    content_type=CONTENT_TYPE_JSON,
+                )
 
-        @app.route("/supportedentities", methods=["GET"])
-        def supported_entities() -> Tuple[str, int]:
+        @self.app.route("/supportedentities", methods=["GET"])
+        def supported_entities() -> Response:
             """Return a list of supported entities."""
             language = request.args.get("language")
             try:
                 entities_list = self.engine.get_supported_entities(language)
-                return jsonify(entities_list), 200
+                return Response(
+                    json.dumps(entities_list),
+                    status=200,
+                    content_type=CONTENT_TYPE_JSON,
+                )
             except Exception as e:
                 self.logger.error(
                     f"A fatal error occurred during execution of "
                     f"AnalyzerEngine.supported_entities(). {e}"
                 )
-                return jsonify(error=e.args[0]), 500
+                return Response(
+                    json.dumps({"error": e.args[0]}),
+                    status=500,
+                    content_type=CONTENT_TYPE_JSON,
+                )
 
-        # --- Anonymizer routes ---
-
-        @app.route("/anonymize", methods=["POST"])
+    def _register_anonymizer_routes(self):
+        @self.app.route("/anonymize", methods=["POST"])
         def anonymize() -> Response:
             content = request.get_json()
             if not content:
@@ -189,9 +219,9 @@ class Server:
                 analyzer_results=analyzer_results,
                 operators=anonymizers_config,
             )
-            return Response(anonymizer_result.to_json(), mimetype="application/json")
+            return Response(anonymizer_result.to_json(), mimetype=CONTENT_TYPE_JSON)
 
-        @app.route("/deanonymize", methods=["POST"])
+        @self.app.route("/deanonymize", methods=["POST"])
         def deanonymize() -> Response:
             content = request.get_json()
             if not content:
@@ -207,36 +237,53 @@ class Server:
                 text=text, entities=deanonymize_entities, operators=deanonymize_config
             )
             return Response(
-                deanonymized_response.to_json(), mimetype="application/json"
+                deanonymized_response.to_json(), mimetype=CONTENT_TYPE_JSON
             )
 
-        @app.route("/anonymizers", methods=["GET"])
-        def anonymizers():
+        @self.app.route("/anonymizers", methods=["GET"])
+        def anonymizers() -> Response:
             """Return a list of supported anonymizers."""
-            return jsonify(self.anonymizer.get_anonymizers())
+            return Response(
+                json.dumps(self.anonymizer.get_anonymizers()),
+                content_type=CONTENT_TYPE_JSON,
+            )
 
-        @app.route("/deanonymizers", methods=["GET"])
-        def deanonymizers():
+        @self.app.route("/deanonymizers", methods=["GET"])
+        def deanonymizers() -> Response:
             """Return a list of supported deanonymizers."""
-            return jsonify(self.deanonymize_engine.get_deanonymizers())
+            return Response(
+                json.dumps(self.deanonymize_engine.get_deanonymizers()),
+                content_type=CONTENT_TYPE_JSON,
+            )
 
-        # --- Error handlers ---
-
-        @app.errorhandler(InvalidParamError)
-        def invalid_param(err):
+    def _register_error_handlers(self):
+        @self.app.errorhandler(InvalidParamError)
+        def invalid_param(err) -> Response:
             self.logger.warning(
                 f"Request failed with parameter validation error: {err.err_msg}"
             )
-            return jsonify(error=err.err_msg), 422
+            return Response(
+                json.dumps({"error": err.err_msg}),
+                status=422,
+                content_type=CONTENT_TYPE_JSON,
+            )
 
-        @app.errorhandler(HTTPException)
-        def http_exception(e):
-            return jsonify(error=e.description), e.code
+        @self.app.errorhandler(HTTPException)
+        def http_exception(e) -> Response:
+            return Response(
+                json.dumps({"error": e.description}),
+                status=e.code,
+                content_type=CONTENT_TYPE_JSON,
+            )
 
-        @app.errorhandler(Exception)
-        def server_error(e):
+        @self.app.errorhandler(Exception)
+        def server_error(e) -> Response:
             self.logger.error(f"A fatal error occurred during execution: {e}")
-            return jsonify(error="Internal server error"), 500
+            return Response(
+                json.dumps({"error": "Internal server error"}),
+                status=500,
+                content_type=CONTENT_TYPE_JSON,
+            )
 
 
 def _exclude_attributes_from_dto(recognizer_result_list):
@@ -254,6 +301,7 @@ def create_app():
 
 
 if __name__ == "__main__":
+    """Run the app for development"""
     app = create_app()
     port = int(os.environ.get("PORT", DEFAULT_PORT))
     app.run(host="0.0.0.0", port=port)
