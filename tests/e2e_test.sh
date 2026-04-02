@@ -3,7 +3,7 @@ set -euo pipefail
 
 export IMG="${1:-ghcr.io/agentic-layer/presidio:test}"
 PORT=3000
-COMPOSE_FILE="$(dirname "$0")/compose.yml"
+COMPOSE_FILE="$(dirname "$0")/../compose.yml"
 
 echo "==> Starting service from image: $IMG"
 docker compose -f "$COMPOSE_FILE" up -d
