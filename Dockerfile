@@ -1,9 +1,8 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 ENV PIP_NO_CACHE_DIR=1
 ENV WORKERS=1
-ENV ANALYZER_PORT=5001
-ENV ANONYMIZER_PORT=5002
+ENV PORT=3000
 ENV NLP_CONF_FILE=/app/conf/nlp.yaml
 ENV ANALYZER_CONF_FILE=/app/conf/analyzer.yaml
 
@@ -21,18 +20,15 @@ RUN python -m spacy download en_core_web_lg \
     && python -m spacy download de_core_news_lg
 
 COPY conf/ /app/conf/
-COPY analyzer/ /app/analyzer/
-COPY anonymizer/ /app/anonymizer/
-COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
+COPY app.py logging.ini /app/
 
 RUN useradd -m -u 1001 presidio && chown -R presidio:presidio /app
 USER 1001
 
-EXPOSE ${ANALYZER_PORT}
-EXPOSE ${ANONYMIZER_PORT}
+EXPOSE ${PORT}
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
-    CMD curl -f "http://localhost:${ANALYZER_PORT}/health" || exit 1
+    CMD curl -f "http://localhost:${PORT}/health" || exit 1
 
-CMD ["/app/start.sh"]
+CMD ["sh", "-c", "gunicorn -w ${WORKERS} -b 0.0.0.0:${PORT} 'app:create_app()'"]
+

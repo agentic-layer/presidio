@@ -18,3 +18,6 @@ jobs:
 
       - name: Docker Build
         run: make docker-build
+
+      - name: E2E Test
+        run: make e2e-test

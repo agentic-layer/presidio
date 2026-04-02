@@ -1,4 +1,8 @@
-"""REST API server for analyzer."""
+# Combined REST API server for presidio analyzer and anonymizer.
+# Analyzer routes adapted from:
+#   https://github.com/microsoft/presidio/blob/main/presidio-analyzer/app.py
+# Anonymizer routes adapted from:
+#   https://github.com/microsoft/presidio/blob/main/presidio-anonymizer/app.py
 
 import json
 import logging
@@ -14,32 +18,24 @@ from presidio_analyzer import (
     AnalyzerRequest,
     BatchAnalyzerEngine,
 )
-from werkzeug.exceptions import HTTPException
+from presidio_anonymizer import AnonymizerEngine, DeanonymizeEngine
+from presidio_anonymizer.entities import InvalidParamError
+from presidio_anonymizer.services.app_entities_convertor import AppEntitiesConvertor
+from werkzeug.exceptions import BadRequest, HTTPException
 
-DEFAULT_PORT = "5001"
+DEFAULT_PORT = "3000"
 DEFAULT_BATCH_SIZE = "500"
 DEFAULT_N_PROCESS = "1"
 
 LOGGING_CONF_FILE = "logging.ini"
 
-WELCOME_MESSAGE = r"""
- _______  _______  _______  _______ _________ ______  _________ _______
-(  ____ )(  ____ )(  ____ \(  ____ \\__   __/(  __  \ \__   __/(  ___  )
-| (    )|| (    )|| (    \/| (    \/   ) (   | (  \  )   ) (   | (   ) |
-| (____)|| (____)|| (__    | (_____    | |   | |   ) |   | |   | |   | |
-|  _____)|     __)|  __)   (_____  )   | |   | |   | |   | |   | |   | |
-| (      | (\ (   | (            ) |   | |   | |   ) |   | |   | |   | |
-| )      | ) \ \__| (____/\/\____) |___) (___| (__/  )___) (___| (___) |
-|/       |/   \__/(_______/\_______)\_______/(______/ \_______/(_______)
-"""
-
 
 class Server:
-    """HTTP Server for calling Presidio Analyzer."""
+    """HTTP server combining Presidio Analyzer and Anonymizer."""
 
     def __init__(self):
         fileConfig(Path(Path(__file__).parent, LOGGING_CONF_FILE))
-        self.logger = logging.getLogger("presidio-analyzer")
+        self.logger = logging.getLogger("presidio")
         self.logger.setLevel(os.environ.get("LOG_LEVEL", self.logger.level))
         self.app = Flask(__name__)
 
@@ -53,16 +49,25 @@ class Server:
             nlp_engine_conf_file=nlp_engine_conf_file,
             recognizer_registry_conf_file=recognizer_registry_conf_file,
         ).create_engine()
-
         self.batch_engine = BatchAnalyzerEngine(self.engine)
-        self.logger.info(WELCOME_MESSAGE)
 
-        @self.app.route("/health")
+        self.logger.info("Starting anonymizer engine")
+        self.anonymizer = AnonymizerEngine()
+        self.deanonymize_engine = DeanonymizeEngine()
+
+        self._register_routes()
+
+    def _register_routes(self):
+        app = self.app
+
+        @app.route("/health")
         def health() -> str:
             """Return basic health probe result."""
-            return "Presidio Analyzer service is up"
+            return "Presidio service is up"
 
-        @self.app.route("/analyze", methods=["POST"])
+        # --- Analyzer routes ---
+
+        @app.route("/analyze", methods=["POST"])
         def analyze() -> Tuple[str, int]:
             """Execute the analyzer function."""
             try:
@@ -119,7 +124,6 @@ class Server:
                 )
                 self.logger.error(error_msg)
                 return jsonify(error=error_msg), 400
-
             except Exception as e:
                 self.logger.error(
                     f"A fatal error occurred during execution of "
@@ -127,7 +131,7 @@ class Server:
                 )
                 return jsonify(error=e.args[0]), 500
 
-        @self.app.route("/recognizers", methods=["GET"])
+        @app.route("/recognizers", methods=["GET"])
         def recognizers() -> Tuple[str, int]:
             """Return a list of supported recognizers."""
             language = request.args.get("language")
@@ -142,7 +146,7 @@ class Server:
                 )
                 return jsonify(error=e.args[0]), 500
 
-        @self.app.route("/supportedentities", methods=["GET"])
+        @app.route("/supportedentities", methods=["GET"])
         def supported_entities() -> Tuple[str, int]:
             """Return a list of supported entities."""
             language = request.args.get("language")
@@ -156,22 +160,88 @@ class Server:
                 )
                 return jsonify(error=e.args[0]), 500
 
-        @self.app.errorhandler(HTTPException)
+        # --- Anonymizer routes ---
+
+        @app.route("/anonymize", methods=["POST"])
+        def anonymize() -> Response:
+            content = request.get_json()
+            if not content:
+                raise BadRequest("Invalid request json")
+
+            anonymizers_config = AppEntitiesConvertor.operators_config_from_json(
+                content.get("anonymizers")
+            )
+            if AppEntitiesConvertor.check_custom_operator(anonymizers_config):
+                raise BadRequest("Custom type anonymizer is not supported")
+
+            analyzer_results = AppEntitiesConvertor.analyzer_results_from_json(
+                content.get("analyzer_results")
+            )
+            anonymizer_result = self.anonymizer.anonymize(
+                text=content.get("text", ""),
+                analyzer_results=analyzer_results,
+                operators=anonymizers_config,
+            )
+            return Response(anonymizer_result.to_json(), mimetype="application/json")
+
+        @app.route("/deanonymize", methods=["POST"])
+        def deanonymize() -> Response:
+            content = request.get_json()
+            if not content:
+                raise BadRequest("Invalid request json")
+            text = content.get("text", "")
+            deanonymize_entities = AppEntitiesConvertor.deanonymize_entities_from_json(
+                content
+            )
+            deanonymize_config = AppEntitiesConvertor.operators_config_from_json(
+                content.get("deanonymizers")
+            )
+            deanonymized_response = self.deanonymize_engine.deanonymize(
+                text=text, entities=deanonymize_entities, operators=deanonymize_config
+            )
+            return Response(
+                deanonymized_response.to_json(), mimetype="application/json"
+            )
+
+        @app.route("/anonymizers", methods=["GET"])
+        def anonymizers():
+            """Return a list of supported anonymizers."""
+            return jsonify(self.anonymizer.get_anonymizers())
+
+        @app.route("/deanonymizers", methods=["GET"])
+        def deanonymizers():
+            """Return a list of supported deanonymizers."""
+            return jsonify(self.deanonymize_engine.get_deanonymizers())
+
+        # --- Error handlers ---
+
+        @app.errorhandler(InvalidParamError)
+        def invalid_param(err):
+            self.logger.warning(
+                f"Request failed with parameter validation error: {err.err_msg}"
+            )
+            return jsonify(error=err.err_msg), 422
+
+        @app.errorhandler(HTTPException)
         def http_exception(e):
             return jsonify(error=e.description), e.code
 
+        @app.errorhandler(Exception)
+        def server_error(e):
+            self.logger.error(f"A fatal error occurred during execution: {e}")
+            return jsonify(error="Internal server error"), 500
+
 
 def _exclude_attributes_from_dto(recognizer_result_list):
-    excluded_attributes = [
-        "recognition_metadata",
-    ]
+    excluded_attributes = ["recognition_metadata"]
     for result in recognizer_result_list:
         for attr in excluded_attributes:
             if hasattr(result, attr):
                 delattr(result, attr)
 
 
-def create_app():  # noqa: D103
+def create_app():
+    """Create and return the combined presidio Flask application."""
     server = Server()
     return server.app
 
