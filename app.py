@@ -131,8 +131,11 @@ class Server:
             """Execute the analyzer function."""
             try:
                 req_data = AnalyzerRequest(request.get_json())
+                self.logger.debug("Analyze request: %s", request.get_json())
                 self._validate_analyze_request(req_data)
-                return self._run_analysis(req_data)
+                response = self._run_analysis(req_data)
+                self.logger.debug("Analyze response: %s", response.get_data(as_text=True))
+                return response
             except TypeError as te:
                 error_msg = (
                     f"Failed to parse /analyze request "
@@ -216,11 +219,13 @@ class Server:
             analyzer_results = AppEntitiesConvertor.analyzer_results_from_json(
                 content.get("analyzer_results")
             )
+            self.logger.debug("Anonymize request: %s", content)
             anonymizer_result = self.anonymizer.anonymize(
                 text=content.get("text", ""),
                 analyzer_results=analyzer_results,
                 operators=anonymizers_config,
             )
+            self.logger.debug("Anonymize response: %s", anonymizer_result.to_json())
             return Response(anonymizer_result.to_json(), mimetype=CONTENT_TYPE_JSON)
 
         @self.app.route("/deanonymize", methods=["POST"])
@@ -235,9 +240,11 @@ class Server:
             deanonymize_config = AppEntitiesConvertor.operators_config_from_json(
                 content.get("deanonymizers")
             )
+            self.logger.debug("Deanonymize request: %s", content)
             deanonymized_response = self.deanonymize_engine.deanonymize(
                 text=text, entities=deanonymize_entities, operators=deanonymize_config
             )
+            self.logger.debug("Deanonymize response: %s", deanonymized_response.to_json())
             return Response(
                 deanonymized_response.to_json(), mimetype=CONTENT_TYPE_JSON
             )
