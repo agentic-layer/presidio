@@ -11,6 +11,7 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from flask import Flask, Response, request
+from otel import setup_otel
 from presidio_analyzer import (
     AnalyzerEngine,
     AnalyzerEngineProvider,
@@ -38,6 +39,7 @@ class Server:
         fileConfig(Path(Path(__file__).parent, LOGGING_CONF_FILE))
         self.logger = logging.getLogger("presidio")
         self.logger.setLevel(os.environ.get("LOG_LEVEL", self.logger.level))
+        setup_otel()
         self.app = Flask(__name__)
 
         conf_dir = Path(__file__).parent / "conf"
