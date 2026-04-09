@@ -17,7 +17,7 @@ COPY --chown=1001:1001 pyproject.toml uv.lock /app/
 RUN uv sync --frozen --no-dev --no-cache
 
 COPY --chown=1001:1001 conf/ /app/conf/
-COPY --chown=1001:1001 app.py logging.ini /app/
+COPY --chown=1001:1001 app.py logging.ini otel.py /app/
 
 EXPOSE 8000
 
