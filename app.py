@@ -7,11 +7,10 @@
 import json
 import logging
 import os
-from logging.config import fileConfig
 from pathlib import Path
 
 from flask import Flask, Response, request
-from otel import setup_otel
+from otel import instrument_flask_app, setup_otel
 from presidio_analyzer import (
     AnalyzerEngine,
     AnalyzerEngineProvider,
@@ -27,20 +26,23 @@ DEFAULT_PORT = "8000"
 DEFAULT_BATCH_SIZE = "500"
 DEFAULT_N_PROCESS = "1"
 
-LOGGING_CONF_FILE = "logging.ini"
-
 CONTENT_TYPE_JSON = "application/json"
 
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()],
+)
+
+setup_otel()
 
 class Server:
     """HTTP server combining Presidio Analyzer and Anonymizer."""
 
     def __init__(self):
-        fileConfig(Path(Path(__file__).parent, LOGGING_CONF_FILE))
-        self.logger = logging.getLogger("presidio")
-        self.logger.setLevel(os.environ.get("LOG_LEVEL", self.logger.level))
-        setup_otel()
+        self.logger = logging.getLogger(__name__)
         self.app = Flask(__name__)
+        instrument_flask_app(self.app)
 
         conf_dir = Path(__file__).parent / "conf"
         analyzer_conf_file = os.environ.get(

@@ -34,20 +34,22 @@ from opentelemetry.sdk._logs import LoggingHandler
 
 def setup_otel() -> None:
     """Set up OpenTelemetry tracing, logging, and metrics."""
+    logger = logging.getLogger(__name__)
+
     if not os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+        logger.info("OTEL exporter endpoint not set, skipping OpenTelemetry setup")
         return
 
+    logger.info("Setting up OpenTelemetry")
+
     protocol = os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
-    use_grpc = protocol == "grpc"
+    use_grpc = protocol.startswith("grpc")
 
     # Traces
     tracer_provider = TracerProvider()
     span_exporter = GRPCSpanExporter() if use_grpc else HTTPSpanExporter()
     tracer_provider.add_span_processor(BatchSpanProcessor(span_exporter))
     trace.set_tracer_provider(tracer_provider)
-
-    # Flask instrumentation
-    FlaskInstrumentor().instrument()
 
     # Logs
     LoggingInstrumentor().instrument()
@@ -66,3 +68,13 @@ def setup_otel() -> None:
 
     # Reduce urllib3 noise
     logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+
+def instrument_flask_app(app) -> None:
+    """Instrument a Flask app with OpenTelemetry tracing and metrics."""
+    if not os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+        return
+    FlaskInstrumentor().instrument_app(
+        app,
+        excluded_urls="^/health$",
+    )

@@ -1,7 +1,8 @@
 FROM python:3.13-slim
 
 ENV UV_PYTHON_DOWNLOADS=never \
-    UV_COMPILE_BYTECODE=1
+    UV_COMPILE_BYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
@@ -17,7 +18,7 @@ COPY --chown=1001:1001 pyproject.toml uv.lock /app/
 RUN uv sync --frozen --no-dev --no-cache
 
 COPY --chown=1001:1001 conf/ /app/conf/
-COPY --chown=1001:1001 app.py logging.ini otel.py /app/
+COPY --chown=1001:1001 app.py otel.py /app/
 
 EXPOSE 8000
 
