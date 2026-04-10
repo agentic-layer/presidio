@@ -25,6 +25,7 @@ ner_model_configuration:
   - ORGANIZATION
   - CARDINAL
   - EVENT
+  - MISC
   - LANGUAGE
   - LAW
   - MONEY
