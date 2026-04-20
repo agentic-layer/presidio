@@ -23,6 +23,6 @@ COPY --chown=1001:1001 app.py otel.py /app/
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=5 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+    CMD .venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
 ENTRYPOINT [".venv/bin/gunicorn", "-b", "0.0.0.0:8000", "app:create_app()"]
