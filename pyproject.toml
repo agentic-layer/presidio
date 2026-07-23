@@ -3,7 +3,7 @@ name = "presidio"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-    "presidio-analyzer[server]==2.2.363",
+    "presidio-analyzer[server]==2.2.364",
     "presidio-anonymizer[server]==2.2.363",
     "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0.tar.gz",
     "de-core-news-lg @ https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0.tar.gz",
