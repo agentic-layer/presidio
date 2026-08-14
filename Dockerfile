@@ -6,7 +6,7 @@ ENV UV_PYTHON_DOWNLOADS=never \
 
 WORKDIR /app
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.3 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.4 /uv /usr/local/bin/uv
 
 RUN useradd -m -u 1001 presidio \
   && chown 1001:1001 /app
